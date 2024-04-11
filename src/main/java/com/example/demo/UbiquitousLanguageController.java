@@ -3,13 +3,24 @@ package com.example.demo;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
+import jakarta.servlet.http.Part;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Service;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.beans.PropertyEditorSupport;
 import java.util.*;
@@ -50,12 +61,16 @@ record ConceptId(@JsonValue String id) {
 
 @AllArgsConstructor
 @NoArgsConstructor
+@Builder
 class Concept {
     @JsonProperty("conceptId")
     ConceptId conceptId;
 
     @JsonProperty("conceptTitle")
     ConceptTitle conceptTitle;
+
+    @JsonProperty("createdBy")
+    ParticipantId createdBy;
 }
 
 @AllArgsConstructor
@@ -105,12 +120,10 @@ class SingleValuePropertyEditor<T> extends PropertyEditorSupport {
     }
 }
 
-@RestController
-public class UbiquitousLanguageController {
+@Service
+class ParticipantService {
 
-    List<Concept> concepts = new ArrayList<>();
-    AtomicLong atomicLong = new AtomicLong();
-    Map<ParticipantId, Participant> participants = Map.of( // Dhruv - realize map is just an index
+    Map<ParticipantId, Participant> participantsById = Map.of( // Dhruv - realize map is just an index
             new ParticipantId("1"),
             new Participant(
                     new ParticipantId("1"),
@@ -118,6 +131,65 @@ public class UbiquitousLanguageController {
                     new ProfileThumbnailLink("link")
             )
     );
+
+    Map<ParticipantName, Participant> participantsByName = Map.of( // Dhruv - realize map is just an index
+            new ParticipantName("Dhruv"),
+            new Participant(
+                    new ParticipantId("1"),
+                    new ParticipantName("Dhruv"),
+                    new ProfileThumbnailLink("link")
+            )
+    );
+
+
+    List<Participant> getAllParticipants() {
+        return participantsById.values().stream().toList();
+    }
+
+    Optional<Participant> getParticipant(ParticipantId participantId) {
+        Participant participant = participantsById.get(participantId);
+        if (participant == null) {
+            return Optional.empty();
+        }
+        return Optional.of(participant);
+    }
+
+    Optional<Participant> getByName(ParticipantName name) {
+        Participant participant = participantsByName.get(name);
+        if (participant == null) {
+            return Optional.empty();
+        }
+        return Optional.of(participant);
+    }
+
+
+}
+
+class ParticipantNotAuthorized extends RuntimeException {
+    public ParticipantNotAuthorized(ParticipantName participantName) {
+        super("Participant not authorized, please register the partner with the session first");
+    }
+}
+
+@ControllerAdvice
+class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(ParticipantNotAuthorized.class)
+    public ResponseEntity<Object> handleParticipantNotAuthorized(ParticipantNotAuthorized participantNotAuthorized, WebRequest webRequest) {
+        HttpStatusCode statusCode = HttpStatusCode.valueOf(HttpStatus.UNAUTHORIZED.value());
+        ErrorResponse errorResponse = ErrorResponse.builder(participantNotAuthorized, statusCode, "E001" ).build();
+        return handleExceptionInternal(participantNotAuthorized, errorResponse, new HttpHeaders(), statusCode, webRequest);
+    }
+}
+
+@RestController
+public class UbiquitousLanguageController {
+
+    @Autowired
+    ParticipantService participantService;
+
+    List<Concept> concepts = new ArrayList<>();
+    AtomicLong atomicLong = new AtomicLong();
 
     @InitBinder
     public void initBinder(WebDataBinder webDataBinder) {
@@ -132,16 +204,13 @@ public class UbiquitousLanguageController {
      */
     @GetMapping("/participants")
     public List<Participant> participants() {
-        return participants.values().stream().toList();
+        return participantService.getAllParticipants();
     }
 
     @GetMapping("/participants/{participantId}")
     public ResponseEntity<Participant> participant(@PathVariable ParticipantId participantId) {
-        Participant participant = participants.get(participantId);
-        if(participant == null) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
-        }
-        return ResponseEntity.ok().body(participant);
+        Optional<Participant> participant = participantService.getParticipant(participantId);
+        return participant.map(p -> ResponseEntity.ok().body(p)).orElseGet(() -> new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
 
     @GetMapping("/concepts")
@@ -155,10 +224,38 @@ public class UbiquitousLanguageController {
         return maybeConcept.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /*
+    curl -i -u user:user -X POST \
+      http://localhost:8080/concepts \
+      -H 'Content-Type: application/json' \
+      -d '{
+            "title": "title"
+    }'
+     */
     @PostMapping("/concepts")
     public ResponseEntity<Concept> createConcept(@RequestBody ConceptCreationRequest conceptCreationRequest) {
+        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        System.out.println("the user is " + userDetails.getUsername());
+        System.out.println("the user's password is " + userDetails.getPassword());
+        System.out.println("the user authorities are " + userDetails.getAuthorities().stream().toList());
+
+        ParticipantName participantName = new ParticipantName(userDetails.getUsername());
+
+        Optional<Participant> byName = participantService.getByName(participantName);
+
+        if (byName.isEmpty()) {
+            throw new ParticipantNotAuthorized(participantName);
+        }
+
+        ParticipantId participantId = byName.get().participantId;
+
         long conceptId = atomicLong.incrementAndGet();
-        Concept concept = new Concept(new ConceptId(String.valueOf(conceptId)), new ConceptTitle(conceptCreationRequest.conceptTitle));
+        Concept concept = Concept.builder()
+                .conceptId(new ConceptId(String.valueOf(conceptId)))
+                .conceptTitle(new ConceptTitle(conceptCreationRequest.conceptTitle))
+                .createdBy(participantId)
+                .build();
         concepts.add(concept);
         return ResponseEntity.ok(concept);
     }
