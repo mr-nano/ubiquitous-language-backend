@@ -26,12 +26,12 @@ public class SpringSecurity {
         return http.httpBasic().and().build();
     }
 
-    @Bean
-    public UserDetailsService userDetailsService() {
-        UserDetails userOne = User.withUsername("user").password("{noop}user").roles("USER").build();
-        UserDetails userTwo = User.withUsername("Dhruv").password("{noop}user").roles("USER").build();
-        UserDetails admin = User.withUsername("admin").password("{noop}admin").roles("ADMIN","USER").build();
-
-        return new InMemoryUserDetailsManager(userOne, userTwo, admin);
-    }
+//    @Bean
+//    public UserDetailsService userDetailsService() {
+//        UserDetails userOne = User.withUsername("user").password("{noop}user").roles("USER").build();
+//        UserDetails userTwo = User.withUsername("Dhruv").password("{noop}user").roles("USER").build();
+//        UserDetails admin = User.withUsername("admin").password("{noop}admin").roles("ADMIN","USER").build();
+//
+//        return new InMemoryUserDetailsManager(userOne, userTwo, admin);
+//    }
 }

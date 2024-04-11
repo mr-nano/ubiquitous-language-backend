@@ -3,6 +3,7 @@ package com.example.demo.participant.domain;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -10,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Getter
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
+@Builder
 public class Participant {
     @JsonProperty("participantId")
     ParticipantId participantId;

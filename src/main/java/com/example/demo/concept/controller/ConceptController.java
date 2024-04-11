@@ -10,6 +10,7 @@ import com.example.demo.participant.domain.Participant;
 import com.example.demo.participant.domain.ParticipantId;
 import com.example.demo.participant.domain.ParticipantName;
 import com.example.demo.participant.service.ParticipantService;
+import com.example.demo.user.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,6 +28,9 @@ public class ConceptController {
 
     @Autowired
     ParticipantService participantService;
+
+    @Autowired
+    UserService userService;
 
     AtomicLong atomicLong = new AtomicLong();
 
@@ -60,13 +64,7 @@ public class ConceptController {
      */
     @PostMapping("/concepts")
     public ResponseEntity<Concept> createConcept(@RequestBody ConceptCreationRequest conceptCreationRequest) {
-        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-
-        System.out.println("the user is " + userDetails.getUsername());
-        System.out.println("the user's password is " + userDetails.getPassword());
-        System.out.println("the user authorities are " + userDetails.getAuthorities().stream().toList());
-
-        ParticipantName participantName = new ParticipantName(userDetails.getUsername());
+        ParticipantName participantName = new ParticipantName(userService.getUsername());
 
         Optional<Participant> byName = participantService.getByName(participantName);
 
